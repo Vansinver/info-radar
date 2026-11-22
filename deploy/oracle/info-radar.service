@@ -1,0 +1,18 @@
+[Unit]
+Description=信息收集系统 · 公网薄壳后端（Oracle ARM）
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/info-radar.env
+WorkingDirectory=/opt/info-radar/app/backend
+ExecStart=/opt/info-radar/venv-gptr/bin/python -m uvicorn server:app --host 127.0.0.1 --port 7860 --log-level warning
+Restart=always
+RestartSec=5
+# 仅监听环回，公网经 Tailscale Funnel 暴露，Oracle 安全列表无需开放 7860
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
