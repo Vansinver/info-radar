@@ -1,135 +1,182 @@
-/* 历史会话 UI（公网版）：复用 index.html 的 S/api/post/esc/currentContext/updateCtx。
-   增量：导出走鉴权 blob；访客守卫（不写云端）；示例会话只读。原有右栏/左栏/资料联动逻辑保留。 */
-S.history={active:null,items:[],detail:null,context:null};
-S.chatSending=false; S.chatPending=null;
-
-async function historyAuthBlob(path, filename, download){
-  const t=localStorage.getItem('radar_token')||'';
-  const r=await fetch((window.API_BASE||'')+path,{headers:t?{'Authorization':'Bearer '+t}:{}});
-  if(!r.ok){ toast('导出失败 HTTP '+r.status); return; }
-  const blob=await r.blob(); const u=URL.createObjectURL(blob);
-  if(download){ const a=document.createElement('a'); a.href=u; a.download=filename; a.click(); }
-  else window.open(u,'_blank');
-  setTimeout(()=>URL.revokeObjectURL(u),60000);
+/* Durable history UI（公网适配版）。No automatic messages or model calls. */
+const H={id:null, context:null, ready:false, busy:false, token:0, query:'', all:[], timer:null};
+const oldContext=currentContext;
+currentContext=function(){
+  if(S.tab==='rt' && S.rt.active) return oldContext();
+  return H.context||{label:'',text:''};
+};
+function historyStatus(text,error=false){
+  $('historyStatus').textContent=text; $('historyStatus').style.color=error?'var(--danger)':'var(--sub)';
+  $('historyRetry').hidden=!error;
 }
-function bindExport(id, fmt){
-  const el=$(id);
-  el.onclick=async(e)=>{ e.preventDefault(); if(!S.history.active){toast('先选择会话');return;} await historyAuthBlob('/api/history/'+encodeURIComponent(S.history.active)+'/export?format='+fmt, 'session-'+S.history.active+'.'+fmt, true); };
+function setChatEnabled(yes){
+  $('chatSend').disabled=!yes; $('chatInput').disabled=!yes;
+  document.querySelectorAll('.chip').forEach(x=>{x.style.pointerEvents=yes?'':'none';x.style.opacity=yes?'':'0.45';});
+}
+function historyError(e){historyStatus('历史加载失败：'+e.message+'。记录尚未确认，请重试。',true);setChatEnabled(false);}
+function defaultSession(){ return localStorage.getItem('radar_history_session') || (window.__guest?'demo':'legacy'); }
+function bindExport(el, sid, fmt){
   el.href='#';
+  el.onclick=async(e)=>{
+    e.preventDefault();
+    if(window.__guest){ toast('示例模式：登录后可导出真实会话'); return; }
+    try{
+      const t=authToken(); const h=t?{'Authorization':'Bearer '+t}:{};
+      const r=await fetch((window.API_BASE||'')+'/api/history/'+encodeURIComponent(sid)+'/export?format='+fmt,{headers:h});
+      if(!r.ok){ toast('导出失败 HTTP '+r.status); return; }
+      const blob=await r.blob(); const u=URL.createObjectURL(blob);
+      const a=document.createElement('a'); a.href=u; a.download='session-'+sid+'.'+fmt; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=>URL.revokeObjectURL(u),60000);
+    }catch(e){ toast('导出错误：'+e.message); }
+  };
 }
-function renderHistoryList(items){
-  const list=$('sessionList');
-  list.innerHTML=items.map(x=>`<button class="session-item${x.id===S.history.active?' selected':''}" data-id="${esc(x.id)}"><strong>${esc(x.title)}</strong><small>${x.message_count} 条问答 · ${esc(x.updated_at||'')}</small></button>`).join('') || '<p class="sub">没有找到会话。可新建讨论；旧版记录不会猜测拆分。</p>';
-  list.querySelectorAll('button').forEach(b=>b.onclick=()=>openHistorySession(b.dataset.id));
+async function historyList(){
+  const result=await api('/api/history?q='+encodeURIComponent($('historySearch').value.trim()));
+  const list=$('sessionList'); list.replaceChildren();
+  if(!result.sessions.length){list.textContent='没有匹配会话。可以换关键词，或新建讨论。';return;}
+  for(const s of result.sessions){
+    const b=document.createElement('button'); b.className='session-item'+(s.id===H.id?' selected':'');
+    const title=document.createElement('strong'); title.textContent=s.title;
+    const detail=document.createElement('small'); detail.textContent=s.count+' 条 · '+s.created+' → '+s.updated;
+    b.append(title,detail); b.onclick=()=>chooseSession(s.id);list.appendChild(b);
+  }
 }
-async function loadHistoryList(){
-  const q=$('historySearch').value.trim();
-  try{ const result=await api('/api/history'+(q?'?q='+encodeURIComponent(q):'')); S.history.items=result.sessions; renderHistoryList(result.sessions); }
-  catch(e){ $('sessionList').innerHTML='<p class="sub">历史列表读取失败：'+esc(e.message)+'</p>'; }
+function historyFilter(){
+  const q=$('messageSearch').value.trim().toLowerCase();
+  const messages=q?H.all.filter(m=>String(m.content).toLowerCase().includes(q)):H.all;
+  $('historyMessageCount').textContent=q?'匹配 '+messages.length+' / '+H.all.length+' 条':'共 '+H.all.length+' 条';
+  $('historyMessages').innerHTML=messages.length?messages.map(msgHtml).join(''):'<p class="empty">没有匹配记录</p>';
 }
-function setHistoryStatus(message,error){$('historyStatus').textContent=message;$('historyStatus').style.color=error?'var(--danger)':'var(--sub)';}
-function historyError(e){setHistoryStatus('历史连接失败：'+e.message,true);$('historyRetry').hidden=false;}
-function renderHistoryMessages(messages,query){
-  const q=(query||'').trim().toLowerCase(), filtered=q?messages.filter(m=>(m.content||'').toLowerCase().includes(q)):messages;
-  $('historyMessageCount').textContent=q?`找到 ${filtered.length} 条 / 共 ${messages.length} 条`:`共 ${messages.length} 条消息`;
-  $('historyMessages').innerHTML=filtered.map(m=>`<div class="msg ${esc(m.role)}"><div class="who">${m.role==='user'?'我':m.role==='note'?'交接':'翻译'} · ${esc(m.ts||'')}</div><div class="bubble">${m.role==='assistant'?(m.html||esc(m.content)):esc(m.content)}</div></div>`).join('') || '<p class="sub">没有匹配消息。</p>';
+function renderRelated(item){
+  const list=$('relatedFiles');list.replaceChildren();
+  const seen=new Set();
+  for(const ev of item.events){
+    const key=ev.kind+':'+ev.name;if(seen.has(key))continue;seen.add(key);
+    const b=document.createElement('button');b.className='related-file';b.textContent=ev.name+' · '+ev.source;
+    b.onclick=()=>showRelated(ev.kind,ev.name).catch(e=>toast(e.message));list.appendChild(b);
+  }
+  if(!seen.size)list.textContent='暂无关联资料。打开报告、圆桌实录、方案或任务卡后会自动记录。';
+  $('browseEvents').textContent=item.events.slice(0,30).map(e=>e.ts+' · '+e.kind+' · '+e.name+'（'+e.source+'）').join('\n')||'尚无浏览记录';
 }
-function renderRelated(related){
-  const el=$('relatedFiles');
-  el.innerHTML=related.map(x=>`<button class="related-file" data-kind="${esc(x.kind)}" data-name="${esc(x.name)}">[${esc(x.kind)}] ${esc(x.name)}</button>`).join('') || '<p class="sub">此会话尚未关联报告、圆桌、方案或任务卡。</p>';
-  el.querySelectorAll('button').forEach(b=>b.onclick=()=>openHistoryAsset(b.dataset.kind,b.dataset.name));
-}
-function showHistoryTab(){$('showHistory').click();}
-async function openHistoryAsset(kind,name){
+async function chooseSession(id){
+  if(H.busy)return toast('翻译正在回复，请等回复完成后切换会话');
+  const token=++H.token;H.ready=false;setChatEnabled(false);historyStatus('正在恢复会话…');
   try{
-    if(kind==='report'){await openReport(name);showHistoryTab();}
-    else if(kind==='solution'){await openSolution(name);showHistoryTab();}
-    else if(kind==='taskcard'){await openCard(name);showHistoryTab();}
-    else {const result=await api('/api/discussions/'+encodeURIComponent(name));$('historyDocumentTitle').textContent=name;$('historyDocument').innerHTML=result.html||`<pre>${esc(result.raw||'')}</pre>`;$('historyDocumentPanel').hidden=false;}
-    await recordVisit(kind,name);
-  }catch(e){toast('资料打开失败：'+e.message);}
+    const item=await api('/api/history/'+encodeURIComponent(id));if(token!==H.token)return;
+    H.id=id;H.context=item.context?.text?item.context:null;H.all=item.messages;H.ready=true;
+    localStorage.setItem('radar_history_session',id);
+    $('activeSession').textContent=item.title;
+    $('historyTitle').textContent=item.title;
+    $('historyMeta').textContent=item.created+' → '+item.updated+(id==='legacy'?' · 旧版未按会话拆分；更早未落盘部分只有交接摘要。':'');
+    $('messageSearch').value='';
+    bindExport($('exportMd'), id, 'md');
+    bindExport($('exportJson'), id, 'json');
+    renderHistory(item.messages);historyFilter();renderRelated(item);updateCtx();
+    historyStatus('已恢复 '+item.messages.length+' 条 · 新消息会保存在当前会话');setChatEnabled(true);
+    await historyList();
+  }catch(e){if(token===H.token)historyError(e);}
 }
-async function recordVisit(kind,name){
-  if(!S.history.active || window.__guest) return;
-  try{ S.history.context=await post('/api/history/'+encodeURIComponent(S.history.active)+'/visit',{kind,name}); updateCtx(); }
-  catch(e){toast('关联记录失败：'+e.message);}
-}
-async function openHistorySession(id,refreshMessages){
+async function createSession(){
+  if(window.__guest)return toast('示例模式：登录后即可新建讨论');
+  if(H.busy)return toast('请等当前回复完成');
   try{
-    const result=await api('/api/history/'+encodeURIComponent(id));
-    S.history.active=id;S.history.detail=result;S.history.context=result.context;
-    $('historyTitle').textContent=result.session.title;$('activeSession').textContent='当前：'+result.session.title;
-    $('historyMeta').textContent=`创建 ${result.session.created_at} · 更新 ${result.session.updated_at}`;
-    renderHistoryMessages(result.messages,$('messageSearch').value);renderRelated(result.related);
-    $('browseEvents').textContent=result.browse_events.map(x=>`${x.ts} · ${x.kind} · ${x.name}`).join('\n') || '暂无浏览记录。';
-    if(refreshMessages!==false){renderHistory(result.messages);}
-    bindExport('exportMd','md');bindExport('exportJson','json');renderHistoryList(S.history.items);
-    $('historyRetry').hidden=true;setHistoryStatus('已加载会话；右栏可以继续聊天。',false);updateCtx();
+    const item=await post('/api/history',{title:$('newSessionTitle').value.trim()||'新讨论'});
+    $('newSessionTitle').value='';await chooseSession(item.id);$('chatInput').focus();
   }catch(e){historyError(e);}
 }
-async function createHistorySession(title){
-  try{ const result=await post('/api/history',{title:title||'新讨论'}); await loadHistoryList(); await openHistorySession(result.id); $('newSessionTitle').value='';toast('新讨论已创建，旧讨论保持原样。'); }catch(e){toast(e.message);}
+async function recordVisit(kind,name){
+  if(!H.ready||H.busy||window.__guest)return;
+  const sid=H.id;
+  const context=await post('/api/history/'+sid+'/visit',{kind,name});
+  if(H.id!==sid)return;
+  H.context=context;updateCtx();
+  const item=await api('/api/history/'+sid);if(H.id===sid)renderRelated(item);
 }
-function defaultSession(){ if(window.__guest) return 'demo-session'; return S.history.items.some(x=>x.id==='legacy')?'legacy':S.history.items[0]?.id; }
+async function showRelated(kind,name){
+  const endpoints={report:'reports',discussion:'discussions',solution:'solutions',taskcard:'taskcards'};
+  const doc=await api('/api/'+endpoints[kind]+'/'+encodeURIComponent(name));
+  $('historyDocument').innerHTML=doc.html;
+  $('historyDocumentTitle').textContent=name;
+  $('historyDocumentPanel').hidden=false;
+  await recordVisit(kind,name);$('historyDocumentPanel').scrollIntoView({block:'nearest'});
+}
+const historyOpenReport=openReport;
+openReport=async function(name){const token=H.token;await historyOpenReport(name);if(token===H.token)await recordVisit('report',name);};
+const historyOpenSolution=openSolution;
+openSolution=async function(name){const token=H.token;await historyOpenSolution(name);if(token===H.token)await recordVisit('solution',name);};
+const historyOpenCard=openCard;
+openCard=async function(name){const token=H.token;await historyOpenCard(name);if(token===H.token)await recordVisit('taskcard',name);};
+$('repSelect').onchange=e=>openReport(e.target.value).catch(e=>toast(e.message));
+$('solSelect').onchange=e=>openSolution(e.target.value).catch(e=>toast(e.message));
+$('tcSelect').onchange=e=>openCard(e.target.value).catch(e=>toast(e.message));
+
+chatSync=async function(){
+  if(!H.ready||H.busy)return;
+  const sid=H.id,token=H.token;
+  try{
+    const item=await api('/api/history/'+sid);
+    if(token!==H.token||H.busy)return;
+    if(item.messages.length!==H.all.length){
+      H.all=item.messages;renderHistory(item.messages);historyFilter();
+      historyStatus('已同步 '+item.messages.length+' 条');
+    }
+  }catch(e){historyError(e);}
+};
+sendChat=async function(text){
+  if(!text||H.busy||!H.ready)return;
+  if(window.__guest){toast('示例模式：登录后即可向翻译提问');return;}
+  H.busy=true;setChatEnabled(false);$('newHistorySession').disabled=true;
+  const sid=H.id;
+  addMsg('user',text);historyStatus('翻译正在回复…');
+  const previous=H.pending;
+  const requestId=previous&&previous.sid===sid&&previous.text===text?previous.id:(crypto.randomUUID?crypto.randomUUID():Date.now()+'-'+Math.random());
+  H.pending={sid,text,id:requestId};
+  try{
+    if(S.rt.active&&S.rt.md){
+      H.context=await post('/api/history/'+sid+'/visit',{kind:'discussion',name:S.rt.md});
+      updateCtx();
+    }
+    await post('/api/chat',{message:text,session_id:sid,request_id:requestId});
+    H.pending=null;
+    $('chatInput').value='';
+    H.busy=false;await chooseSession(sid);
+  }catch(e){
+    H.busy=false;renderHistory(H.all);setChatEnabled(true);
+    historyStatus('发送失败：'+e.message+'。输入已保留，未伪造回复。',true);
+  }finally{H.busy=false;$('newHistorySession').disabled=false;}
+};
+$('showHistory').onclick=()=>document.querySelector('[data-tab="history"]').click();
+$('historyRetry').onclick=()=>chooseSession(H.id||defaultSession());
+$('historyRefresh').onclick=()=>chooseSession(H.id||defaultSession());
+$('newHistorySession').onclick=createSession;
+$('historySearch').oninput=()=>{clearTimeout(H.timer);H.timer=setTimeout(()=>historyList().catch(historyError),180);};
+$('messageSearch').oninput=historyFilter;
+$('newSessionTitle').onkeydown=e=>{if(e.key==='Enter')createSession();};
+$('historyCloseDocument').onclick=()=>{$('historyDocumentPanel').hidden=true;};
+document.querySelector('[data-tab="history"]').addEventListener('click',()=>historyList().catch(historyError));
 async function historyBoot(){
-  await loadHistoryList();const id=defaultSession();if(id) await openHistorySession(id);else setHistoryStatus('还没有会话，请新建讨论。',false);
+  H.ready=false;setChatEnabled(false);
+  const saved=localStorage.getItem('radar_history_session');
+  if(saved){
+    try{await api('/api/history/'+encodeURIComponent(saved));}catch(e){
+      if(!String(e.message).includes('会话不存在')){historyError(e);return;}
+      localStorage.removeItem('radar_history_session');toast('先前会话不存在，已返回默认记录');
+    }
+  }
+  await chooseSession(defaultSession());
+  await loadHistoryAssets();
 }
 async function loadHistoryAssets(){
-  const groups=[['报告',await api('/api/reports')],['圆桌',await api('/api/discussions')],['方案',await api('/api/solutions')],['任务卡',await api('/api/taskcards')]];
-  $('historyAsset').innerHTML=groups.flatMap(([label,items])=>items.map(x=>`<option value="${esc(label==='报告'?'report':label==='圆桌'?'discussion':label==='方案'?'solution':'taskcard')}|${esc(x.name)}">[${label}] ${esc(x.name)}</option>`)).join('');
+  const groups=await Promise.all(['reports','discussions','solutions','taskcards'].map(x=>api('/api/'+x)));
+  const kinds=['report','discussion','solution','taskcard'], labels=['报告','圆桌实录','方案','任务卡'];
+  $('historyAsset').replaceChildren();
+  groups.forEach((items,i)=>{
+    const group=document.createElement('optgroup');group.label=labels[i];
+    items.forEach(item=>{const option=document.createElement('option');option.value=JSON.stringify({kind:kinds[i],name:item.name});option.textContent=item.name;group.appendChild(option);});
+    $('historyAsset').appendChild(group);
+  });
 }
-$('historyAssetOpen').onclick=()=>{const [kind,name]=$('historyAsset').value.split('|');if(kind&&name)openHistoryAsset(kind,name);};
-$('historyCloseDocument').onclick=()=>{$('historyDocumentPanel').hidden=true;};
-$('historyRefresh').onclick=()=>S.history.active?openHistorySession(S.history.active):loadHistoryList();
-$('historyRetry').onclick=historyBoot;
-$('newHistorySession').onclick=()=>createHistorySession($('newSessionTitle').value.trim());
-$('historySearch').oninput=()=>loadHistoryList();
-$('messageSearch').oninput=()=>{if(S.history.detail)renderHistoryMessages(S.history.detail.messages,$('messageSearch').value);};
-$('showHistory').onclick=()=>{document.querySelector('.tabs button[data-tab="history"]').click();loadHistoryAssets().catch(()=>{});};
-
-/* 会话感知上下文：当前资料 + 当前会话消息，避免新讨论自动读取旧讨论。 */
-const historyBaseContext=currentContext;
-currentContext=function(){
-  const base=historyBaseContext();
-  if(S.history.context) return {label:S.history.context.label,text:S.history.context.text};
-  if(base.text) return base;
-  if(S.history.detail){const messages=S.history.detail.messages.slice(-8).map(m=>`[${m.role}] ${m.content}`).join('\n\n');return {label:'会话 '+S.history.detail.session.title,text:messages};}
-  return {label:'',text:''};
+$('historyAssetOpen').onclick=()=>{
+  if(!$('historyAsset').value)return;
+  const ref=JSON.parse($('historyAsset').value);showRelated(ref.kind,ref.name).catch(e=>toast(e.message));
 };
-
-/* 统一发送队列：每次只发一条，失败保留输入，成功后以服务端记录为准。 */
-async function sendChat(text){
-  text=(text||'').trim();if(!text)return;
-  if(window.__guest){toast('示例模式只读，登录后即可提问');if(window.showLogin)window.showLogin();return;}
-  if(!S.history.active){toast('请先选择或新建会话');return;}
-  if(S.chatSending){S.chatPending=text;toast('当前回答生成中，下一条已排队');return;}
-  const sessionId=S.history.active, requestId=(crypto.randomUUID?crypto.randomUUID():Date.now()+'-'+Math.random());
-  S.chatSending=true;$('chatSend').disabled=true;$('chatInput').value='';addMsg('user',text);
-  const thinking=document.createElement('div');thinking.className='msg bot';thinking.innerHTML='<div class="who">翻译</div><div class="bubble">…</div>';$('msgs').appendChild(thinking);
-  const c=currentContext();
-  try{
-    await post('/api/chat',{message:text,session_id:sessionId,request_id:requestId,context:c.text,context_label:c.label});
-    thinking.remove();
-    if(S.history.active===sessionId){await openHistorySession(sessionId);}
-    else {const saved=await api('/api/history/'+encodeURIComponent(sessionId));renderHistory(saved.messages);}
-    setHistoryStatus('回答已保存。',false);
-  }catch(e){thinking.remove();$('chatInput').value=text;setHistoryStatus('发送失败，内容已保留，可重试：'+e.message,true);toast('发送失败：'+e.message);}
-  finally{S.chatSending=false;$('chatSend').disabled=false;const next=S.chatPending;S.chatPending=null;if(next)sendChat(next);}
-}
-$('chatSend').onclick=()=>sendChat($('chatInput').value);
-$('chatInput').onkeydown=e=>{if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){e.preventDefault();sendChat($('chatInput').value);}};
-document.querySelectorAll('.chip').forEach(c=>c.onclick=()=>sendChat(c.dataset.q));
-
-/* 资料打开与浏览记录统一关联当前会话。 */
-const historyOpenReport=openReport;
-openReport=async function(name){await historyOpenReport(name);if(name)await recordVisit('report',name);};
-const historyOpenSolution=openSolution;
-openSolution=async function(name){await historyOpenSolution(name);if(name)await recordVisit('solution',name);};
-const historyOpenCard=openCard;
-openCard=async function(name){await historyOpenCard(name);if(name)await recordVisit('taskcard',name);};
-const historyRtRender=rtRender;
-rtRender=function(ev){historyRtRender(ev);if(ev.event==='session'&&ev.md)recordVisit('discussion',ev.md);};
-const historyRtStart=$('rtStartBtn').onclick;
-$('rtStartBtn').onclick=async function(){await historyRtStart();if(S.rt.active)post('/api/roundtable/start',{topic:S.rt.topic,session_id:S.history.active||''}).catch(()=>{});};
-const historyStartJob=startJob;
-startJob=async function(kind){await historyStartJob(kind);};

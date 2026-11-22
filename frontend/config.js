@@ -1,5 +1,4 @@
-// 公网部署配置：后端 API 基址（HF Space 或 Tailscale Funnel 的 HTTPS 域名）。
-// 部署时由部署脚本注入真实后端地址；同源部署（Space 直挂前端）时留空字符串即可。
-// 严禁指向 127.0.0.1 / localhost / 本机目录。
+// 部署时注入正式后端地址与版本 SHA；本地/同源运行时留空即可（相对路径）。
+// 红线：前端任何路径不得依赖环回地址或本机目录；一律走 API_BASE 相对/绝对公网基址。
 window.API_BASE = "";
-window.BUILD_VERSION = "pages-placeholder";
+window.BUILD_VERSION = "dev";
