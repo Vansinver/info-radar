@@ -3,7 +3,7 @@ window.__guest = true;
 
 function setConn(online, health) {
   const b = $('connBadge'); if (!b) return;
-  if (!online) { b.textContent = '离线'; b.className = 'conn off'; return; }
+  if (!online) { b.textContent = '后端未接通'; b.className = 'conn off'; return; }
   if (window.__guest) { b.textContent = '示例模式'; b.className = 'conn guest'; }
   else { b.textContent = '在线·已登录'; b.className = 'conn on'; }
 }
