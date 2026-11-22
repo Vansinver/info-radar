@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gptr-deepseek-retriever"
+version = "0.1.0"
+description = "DeepSeek Search API retriever plugin for GPT Researcher (E1)"
+requires-python = ">=3.12"
+dependencies = ["requests"]
+
+[project.entry-points."gpt_researcher.retrievers"]
+deepseek = "deepseek_retriever:DeepSeekSearch"
+
+[tool.setuptools]
+packages = ["deepseek_retriever"]
