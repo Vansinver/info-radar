@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>信息收集系统 · 薄壳</title>
+<style>
+  :root{
+    --bg:#faf6ef; --panel:#fffdf9; --line:#e7dfd2; --ink:#2d2a26; --sub:#8a8175;
+    --accent:#0f766e; --accent-soft:#e6f2f1; --warm:#b45309; --warm-soft:#fdf3e3;
+    --danger:#b91c1c; --radius:10px;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{font-family:system-ui,"Microsoft YaHei",sans-serif; background:var(--bg); color:var(--ink); height:100vh; display:flex; flex-direction:column; font-size:14px;}
+  header{padding:10px 18px; border-bottom:1px solid var(--line); background:var(--panel); display:flex; align-items:center; gap:12px;}
+  header h1{font-size:16px; font-weight:600;}
+  header .dot{width:8px; height:8px; border-radius:50%; background:#22c55e; display:inline-block;}
+  header .hint{color:var(--sub); font-size:12px; margin-left:auto;}
+  main{flex:1; display:flex; min-height:0;}
+  .left{width:var(--split,60%); min-width:300px; border-right:none; display:flex; flex-direction:column; min-height:0;}
+  .divider{flex:none; width:7px; cursor:col-resize; background:var(--line); position:relative; transition:background .15s;}
+  .divider:hover,.divider.drag{background:var(--accent);}
+  .divider::after{content:""; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:3px; height:34px; border-radius:2px; background:rgba(0,0,0,.18);}
+  body.resizing{user-select:none; cursor:col-resize;}
+  body.resizing *{pointer-events:none;}
+  body.resizing .divider{pointer-events:auto;}
+  .tabs{display:flex; gap:2px; padding:8px 12px 0; background:var(--panel); border-bottom:1px solid var(--line);}
+  .tabs button{border:none; background:none; padding:8px 16px; cursor:pointer; font-size:14px; color:var(--sub); border-bottom:2px solid transparent;}
+  .tabs button.on{color:var(--accent); border-bottom-color:var(--accent); font-weight:600;}
+  .panel{flex:1; overflow-y:auto; padding:14px; display:none; min-height:0;}
+  .panel.on{display:block;}
+  .card{background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:12px; margin-bottom:12px;}
+  .card h3{font-size:14px; margin-bottom:8px;}
+  .card .sub{color:var(--sub); font-size:12px; margin-bottom:8px;}
+  textarea,input[type=text]{width:100%; border:1px solid var(--line); border-radius:8px; padding:8px 10px; font:inherit; background:#fff; resize:vertical;}
+  textarea:focus,input:focus{outline:2px solid var(--accent-soft); border-color:var(--accent);}
+  button.btn{border:1px solid var(--accent); background:var(--accent); color:#fff; border-radius:8px; padding:7px 14px; cursor:pointer; font:inherit;}
+  button.btn.ghost{background:none; color:var(--accent);}
+  button.btn.warm{background:var(--warm); border-color:var(--warm);}
+  button.btn:disabled{opacity:.45; cursor:not-allowed;}
+  .row{display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:8px;}
+  .statusbar{font-size:12px; color:var(--sub); padding:6px 10px; background:var(--accent-soft); border-radius:8px; margin-bottom:10px;}
+  .turn{border-left:3px solid var(--accent); background:var(--panel); border-radius:0 8px 8px 0; padding:8px 12px; margin-bottom:10px;}
+  .turn .role{font-size:12px; font-weight:600; color:var(--accent); margin-bottom:4px;}
+  .turn.user{border-left-color:var(--warm);}
+  .turn.user .role{color:var(--warm);}
+  .turn .text{white-space:pre-wrap; line-height:1.65;}
+  .turn .type{font-weight:400; color:var(--sub); margin-left:6px;}
+  pre.log{background:#2d2a26; color:#d6d0c4; font-size:12px; padding:10px; border-radius:8px; max-height:220px; overflow-y:auto; white-space:pre-wrap; margin-top:8px;}
+  .doc{line-height:1.75;}
+  .doc h1{font-size:20px; margin:14px 0 10px;} .doc h2{font-size:17px; margin:14px 0 8px;} .doc h3{font-size:15px; margin:12px 0 6px;}
+  .doc p,.doc li{margin:6px 0;} .doc ul,.doc ol{padding-left:22px;}
+  .doc a{color:var(--accent);} .doc code{background:var(--warm-soft); padding:1px 5px; border-radius:4px; font-size:13px;}
+  .doc pre{background:#f4efe6; padding:10px; border-radius:8px; overflow-x:auto;}
+  .doc table{border-collapse:collapse; margin:8px 0;} .doc th,.doc td{border:1px solid var(--line); padding:5px 9px;}
+  .doc blockquote{border-left:3px solid var(--line); padding-left:10px; color:var(--sub);}
+  select{border:1px solid var(--line); border-radius:8px; padding:7px; font:inherit; background:#fff; max-width:100%;}
+  .fb-clue{border:1px solid var(--line); border-radius:8px; padding:8px 10px; margin:6px 0; background:#fff;}
+  .fb-clue b{color:var(--warm);}
+  .fb-clue .why{color:var(--sub); font-size:12px; margin-top:3px;}
+  .chip{display:inline-block; border:1px solid var(--line); background:#fff; border-radius:999px; padding:4px 12px; font-size:12px; cursor:pointer; color:var(--sub); margin:0 6px 6px 0;}
+  .chip:hover{border-color:var(--accent); color:var(--accent);}
+  /* 右栏聊天 */
+  .right{flex:1; min-width:300px; display:flex; flex-direction:column; min-height:0; background:var(--panel);}
+  .ctx{padding:8px 14px; font-size:12px; color:var(--sub); border-bottom:1px solid var(--line); background:var(--warm-soft);}
+  .msgs{flex:1; overflow-y:auto; padding:14px;}
+  .msg{margin-bottom:12px; max-width:92%;}
+  .msg .who{font-size:11px; color:var(--sub); margin-bottom:3px;}
+  .msg .bubble{padding:9px 12px; border-radius:10px; line-height:1.65; white-space:pre-wrap;}
+  .msg.user{margin-left:auto;} .msg.user .bubble{background:var(--accent); color:#fff;}
+  .msg.bot .bubble{background:#f4efe6; white-space:normal;}
+  .msg.bot .bubble p{margin:5px 0;} .msg.bot .bubble ul,.msg.bot .bubble ol{padding-left:20px; margin:5px 0;}
+  .msg.bot .bubble h1,.msg.bot .bubble h2,.msg.bot .bubble h3{font-size:14px; margin:8px 0 4px;}
+  .msg.bot .bubble code{background:#e9e2d4; padding:1px 5px; border-radius:4px; font-size:12px;}
+  .msg.bot .bubble pre{background:#e9e2d4; padding:8px; border-radius:6px; overflow-x:auto;}
+  .msg.bot .bubble table{border-collapse:collapse;} .msg.bot .bubble th,.msg.bot .bubble td{border:1px solid var(--line); padding:3px 7px;}
+  .msg.bot .bubble a{color:var(--accent);}
+  .msg.note .bubble{background:none; border:1px dashed var(--line); color:var(--sub); font-size:12px;}
+  .chatbar{border-top:1px solid var(--line); padding:10px 14px;}
+  .chatbar .row{margin-top:0;}
+  .chatbar textarea{height:52px;}
+  .toast{position:fixed; top:14px; left:50%; transform:translateX(-50%); background:var(--ink); color:#fff; padding:8px 18px; border-radius:8px; font-size:13px; opacity:0; transition:opacity .3s; pointer-events:none; z-index:99;}
+  .toast.show{opacity:.95;}
+  .empty{color:var(--sub); text-align:center; padding:30px 0;}
+  .tabs{flex-wrap:wrap}.tabs button{padding:8px 10px}
+  .history-toolbar{padding:10px 14px;border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  #activeSession{font-size:13px;font-weight:600;flex:1;min-width:100px}
+  #historyStatus{font-size:12px;color:var(--sub);padding:7px 14px}
+  .session-item{display:block;text-align:left;width:100%;padding:12px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);cursor:pointer;margin:7px 0}
+  .session-item strong,.session-item small{display:block;overflow-wrap:anywhere}.session-item small{margin-top:5px;color:var(--sub);font-size:11px}
+  .session-item.selected{border-color:var(--accent);background:var(--accent-soft)}
+  .history-grid{display:grid;grid-template-columns:minmax(180px,36%) minmax(0,1fr);gap:12px}
+  .related-file{display:block;border:0;border-bottom:1px solid var(--line);background:transparent;text-align:left;color:var(--accent);padding:8px 0;cursor:pointer;overflow-wrap:anywhere;width:100%}
+  #browseEvents{white-space:pre-wrap;font-size:12px;color:var(--sub);max-height:160px;overflow:auto}
+  #historyMessages .msg{max-width:100%}#historyMessages{max-height:52vh;overflow:auto;padding:4px}
+  #historyMessages .who{font-size:12px}#historyMessages .bubble{overflow-wrap:anywhere}
+  #historyMeta{font-size:12px;color:var(--sub);line-height:1.7;margin:8px 0}
+  #historyDocument{max-height:50vh;overflow:auto}#historyDocumentTitle{overflow-wrap:anywhere}
+  [hidden]{display:none!important}
+  @media(max-width:900px){.history-grid{grid-template-columns:1fr}.left{min-width:280px}.right{min-width:270px}}
+
+  .conn{font-size:12px;padding:2px 10px;border-radius:999px;border:1px solid var(--line);color:var(--sub)}
+  .conn.on{color:#15803d;border-color:#bbf7d0;background:#f0fdf4}
+  .conn.guest{color:var(--warm);border-color:#fde68a;background:var(--warm-soft)}
+  .conn.off{color:var(--danger);border-color:#fecaca;background:#fef2f2}
+  .ver{font-size:11px;color:var(--sub)}
+  #guestBanner{background:var(--warm-soft);border-bottom:1px solid #fde68a;color:var(--warm);font-size:12px;padding:6px 18px;text-align:center}
+  #loginOverlay{position:fixed;inset:0;background:rgba(45,42,38,.45);display:flex;align-items:center;justify-content:center;z-index:200}
+  #loginOverlay[hidden]{display:none}
+  .login-card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:22px;width:min(360px,90vw);box-shadow:0 10px 40px rgba(0,0,0,.2)}
+  .login-card h3{font-size:16px;margin-bottom:6px}
+  .login-card .sub{color:var(--sub);font-size:12px;margin-bottom:14px;line-height:1.6}
+  .login-card input{width:100%;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit;margin-bottom:10px}
+  .login-card .err{color:var(--danger);font-size:12px;min-height:16px;margin-bottom:8px}
+</style>
+<script src="./config.js"></script>
+</head>
+<body>
+<header>
+  <span class="dot" id="healthDot"></span>
+  <h1>信息收集系统 · 薄壳</h1>
+  <span class="hint">左栏干活 · 右栏答疑（自动知道你在看什么）</span>
+  <span id="connBadge" class="conn">连接中…</span>
+  <span id="verBadge" class="ver"></span>
+  <button class="btn ghost" id="authBtn" style="padding:4px 12px;font-size:12px">登录</button>
+</header>
+<div id="guestBanner" hidden>示例模式 · 当前展示的是虚构演示数据 · 登录后进入你的真实工作区（报告/圆桌/历史/任务卡）</div>
+<main>
+  <div class="left">
+    <div class="tabs">
+      <button data-tab="rt" class="on">圆桌</button>
+      <button data-tab="art">文章</button>
+      <button data-tab="rep">报告</button>
+      <button data-tab="sol">方案</button>
+      <button data-tab="tc">任务卡</button>
+      <button data-tab="history">历史会话</button>
+    </div>
+
+    <!-- 圆桌 -->
+    <div class="panel on" id="panel-rt">
+      <div class="card" id="rtStartCard">
+        <h3>开一场圆桌（Co-STORM · 现场检索）</h3>
+        <div class="sub">专家发言前都会现场调 DeepSeek 搜索；你随时插话转向。约几毛钱一场。</div>
+        <input type="text" id="rtTopic" placeholder="圆桌话题，如：扫描教材页码定位，结构化索引怎么补向量检索的短板">
+        <div class="row">
+          <label style="font-size:12px;color:var(--sub)"><input type="checkbox" id="rtUseBg"> 以当前查看的报告为背景（不受限于它）</label>
+        </div>
+        <div class="row"><button class="btn" id="rtStartBtn">开始圆桌</button></div>
+      </div>
+      <div id="rtSession" style="display:none">
+        <div class="statusbar" id="rtStatus">…</div>
+        <div class="row" id="rtFiles" style="display:none;margin:-4px 0 10px">
+          <button class="btn ghost" id="rtNotesBtn" style="padding:3px 12px;font-size:12px">讨论实录（实时落盘）</button>
+          <a id="rtJsonl" href="#" target="_blank" rel="noopener" style="font-size:12px;color:var(--sub)">机读 jsonl</a>
+          <span style="font-size:12px;color:var(--sub)">位置：_雷达/discussions/（Obsidian 可直接打开）</span>
+        </div>
+        <div class="card doc" id="rtNotes" style="display:none;max-height:40vh;overflow-y:auto"></div>
+        <div id="rtTurns"></div>
+        <div class="card">
+          <div class="row" style="margin-top:0">
+            <input type="text" id="rtSay" placeholder="插话：问问题 / 给材料 / 带方向（回车发送）" style="flex:1">
+            <button class="btn" id="rtSayBtn">插话</button>
+          </div>
+          <div class="row">
+            <button class="btn ghost" id="rtNextBtn">让专家继续</button>
+            <button class="btn warm" id="rtReportBtn">生成圆桌报告</button>
+            <button class="btn ghost" id="rtStopBtn" style="color:var(--danger);border-color:var(--danger)">结束圆桌</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 文章 -->
+    <div class="panel" id="panel-art">
+      <div class="card">
+        <h3>E1 研究报告（GPT Researcher）</h3>
+        <div class="sub">一个问题 → 多轮检索 → 带出处的研究报告。约 0.1–0.3 元，2–4 分钟。</div>
+        <textarea id="e1Query" rows="2" placeholder="你的真问题"></textarea>
+        <div class="row"><button class="btn" id="e1Btn">开始研究</button><span id="e1Status" class="sub"></span></div>
+        <pre class="log" id="e1Log" style="display:none"></pre>
+      </div>
+      <div class="card">
+        <h3>STORM 文章（多视角采集成文）</h3>
+        <div class="sub">2 视角 × 2 轮对话采集 → 大纲 → 成文 → 润色。约 0.5–1 元，5–10 分钟。</div>
+        <textarea id="artTopic" rows="2" placeholder="文章主题"></textarea>
+        <div class="row"><button class="btn" id="artBtn">生成文章</button><span id="artStatus" class="sub"></span></div>
+        <pre class="log" id="artLog" style="display:none"></pre>
+      </div>
+    </div>
+
+    <!-- 报告 -->
+    <div class="panel" id="panel-rep">
+      <div class="card">
+        <div class="row" style="margin-top:0">
+          <select id="repSelect" style="flex:1"></select>
+          <button class="btn ghost" id="repRefresh">刷新</button>
+        </div>
+        <div class="row">
+          <button class="btn warm" id="repDiscuss">发起讨论（报告→圆桌）</button>
+          <button class="btn ghost" id="repFbMake">生成反馈层</button>
+          <button class="btn ghost" id="repFbShow">查看反馈层</button>
+        </div>
+      </div>
+      <div id="repFb" style="display:none"></div>
+      <div class="card doc" id="repBody"><div class="empty">选择一份报告</div></div>
+    </div>
+
+    <!-- 方案 -->
+    <div class="panel" id="panel-sol">
+      <div class="card">
+        <div class="row" style="margin-top:0">
+          <select id="solSelect" style="flex:1"></select>
+          <button class="btn ghost" id="solRefresh">刷新</button>
+        </div>
+        <div class="sub" style="margin-top:8px">只读视图：当前解法 / 验收清单 / 状态。P2「解题整合循环」上线后由解题 Agent 每轮回写这里。</div>
+      </div>
+      <div class="card doc" id="solBody"><div class="empty">选择一份方案档案</div></div>
+    </div>
+
+    <!-- 任务卡 -->
+    <div class="panel" id="panel-tc">
+      <div class="card">
+        <div class="row" style="margin-top:0">
+          <select id="tcSelect" style="flex:1"></select>
+          <button class="btn ghost" id="tcRefresh">刷新</button>
+        </div>
+        <div class="row">
+          <button class="btn" id="tcGen">生成任务卡（从当前上下文）</button>
+          <button class="btn warm" id="tcHandoff">交给执行 Agent</button>
+        </div>
+        <div class="sub" style="margin-top:8px">存放：50_解决区/任务卡/。**生成即交接**（自动待执行+入 inbox，零点击）；按钮=补交 draft 卡。上下文=左栏当前内容+右栏最近6条问答。执行 Agent 开工自动取卡。</div>
+      </div>
+      <div class="statusbar" id="tcStatus" style="display:none"></div>
+      <div class="card doc" id="tcBody"><div class="empty">选择一张任务卡</div></div>
+    </div>
+    <div class="panel" id="panel-history">
+      <div class="card"><h3>历史会话</h3>
+        <div class="sub">找回问答、关联资料与浏览记录。旧版原始记录保留；新讨论独立保存。</div>
+        <div class="row"><input id="newSessionTitle" type="text" placeholder="新讨论的主题（可选）" style="flex:1"><button class="btn" id="newHistorySession">新建讨论</button></div>
+      </div>
+      <div class="history-grid"><div>
+        <input id="historySearch" type="text" placeholder="搜索会话标题或正文" aria-label="搜索历史会话">
+        <div id="sessionList" aria-live="polite">正在读取…</div>
+      </div><div>
+        <div class="card"><h3 id="historyTitle">选择会话</h3><div id="historyMeta"></div>
+          <div class="row"><button class="btn ghost" id="historyRefresh">刷新记录</button><a id="exportMd" target="_blank" rel="noopener">导出 Markdown</a><a id="exportJson" target="_blank" rel="noopener">导出 JSON</a></div>
+          <p class="sub" style="margin-top:10px">选择后右栏即可继续聊天；新建讨论从空白上下文开始。</p>
+        </div>
+        <div class="card"><h3>关联资料</h3><div id="relatedFiles"></div>
+          <details style="margin-top:10px"><summary>从仓库选择资料</summary><select id="historyAsset" aria-label="仓库资料"></select><button class="btn ghost" id="historyAssetOpen" style="margin-top:8px">打开并关联当前会话</button></details>
+          <details style="margin-top:10px"><summary>浏览记录</summary><div id="browseEvents"></div></details></div>
+        <div class="card" id="historyDocumentPanel" hidden><h3 id="historyDocumentTitle"></h3><button class="btn ghost" id="historyCloseDocument">收起资料</button><div id="historyDocument" class="doc"></div></div>
+        <div class="card"><input id="messageSearch" type="text" placeholder="在当前会话中查找" aria-label="搜索当前会话"><p id="historyMessageCount" class="sub" style="margin-top:8px"></p><div id="historyMessages"></div></div>
+      </div></div>
+    </div>
+  </div>
+
+  <div class="divider" id="divider" title="拖动调节左右比例"></div>
+
+  <!-- 右栏：翻译答疑 -->
+  <div class="right">
+    <div class="history-toolbar"><span id="activeSession">正在恢复历史…</span><button class="btn ghost" id="showHistory">历史会话</button></div>
+    <div id="historyStatus" role="status" aria-live="polite">正在连接记录…</div>
+    <div style="padding:0 14px"><button class="btn ghost" id="historyRetry" hidden>重试加载</button></div>
+    <div class="ctx" id="ctxLabel">当前上下文：无（点开左栏任意内容后自动注入）</div>
+    <div class="msgs" id="msgs">
+      <div class="msg bot"><div class="who">翻译</div><div class="bubble">我是坐在你旁边的翻译。左栏看到什么不懂的，直接问；我会自动知道你在看哪份报告/哪场圆桌。也可以点下面的快捷问题。</div></div>
+    </div>
+    <div class="chatbar">
+      <div>
+        <span class="chip" data-q="用大白话讲讲我现在看的内容，重点是什么">大白话讲讲</span>
+        <span class="chip" data-q="基于我现在看的内容，我下一步该做什么？给具体动作">下一步做什么</span>
+        <span class="chip" data-q="这些内容对我解决教材页码定位问题到底有什么帮助？缺什么？">对我的问题有何用</span>
+      </div>
+      <div class="row">
+        <textarea id="chatInput" placeholder="问点什么…（Ctrl+Enter 发送）" style="flex:1"></textarea>
+        <button class="btn" id="chatSend">发送</button>
+      </div>
+    </div>
+  </div>
+</main>
+<div class="toast" id="toast"></div>
+<div id="loginOverlay" hidden>
+  <div class="login-card">
+    <h3>登录所有者工作区</h3>
+    <div class="sub">真实报告、历史会话与任务卡仅登录后可见。用户名 vansinver；密码在你本机 _雷达/.env 的 OWNER_PASSWORD 行（勿发聊天）。</div>
+    <input id="loginUser" type="text" placeholder="用户名" autocomplete="username">
+    <input id="loginPass" type="password" placeholder="密码" autocomplete="current-password">
+    <div class="err" id="loginError"></div>
+    <div class="row"><button class="btn" id="loginBtn">登录</button><button class="btn ghost" id="loginCancel">取消</button></div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const S = {tab:'rt', report:null, solution:null, rt:{active:false, since:0, topic:'', turns:[]},
+           jobs:{e1:null, article:null}, chatHistory:[], chatRendered:0, reports:[]};
+
+function toast(t){ const el=$('toast'); el.textContent=t; el.classList.add('show'); setTimeout(()=>el.classList.remove('show'),2600); }
+function authToken(){ return localStorage.getItem('radar_token')||''; }
+function apiUrl(p){ return (window.API_BASE||'')+p; }
+async function api(path, opt){
+  opt=opt||{}; const h=Object.assign({},opt.headers||{});
+  const t=authToken(); if(t) h['Authorization']='Bearer '+t;
+  opt.headers=h;
+  const r=await fetch(apiUrl(path), opt);
+  if(r.status===401){ if(window.showLogin) window.showLogin(); throw new Error('需要登录'); }
+  if(!r.ok){ let d; try{ d=await r.json(); }catch(e){ d={detail:r.statusText}; } throw new Error(d.detail||('HTTP '+r.status)); }
+  return r.json();
+}
+async function openApiBlob(path, filename){
+  const t=authToken(); const h=t?{'Authorization':'Bearer '+t}:{};
+  const r=await fetch(apiUrl(path),{headers:h});
+  if(!r.ok){ toast('打开失败 HTTP '+r.status); return; }
+  const blob=await r.blob(); const u=URL.createObjectURL(blob);
+  window.open(u,'_blank'); setTimeout(()=>URL.revokeObjectURL(u),60000);
+}
+const post = (p,b)=>api(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})});
+function esc(s){ return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+
+/* ---------- tabs ---------- */
+document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('.tabs button').forEach(x=>x.classList.remove('on'));
+  document.querySelectorAll('.panel').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on'); $('panel-'+b.dataset.tab).classList.add('on'); S.tab=b.dataset.tab; updateCtx();
+});
+
+/* ---------- 上下文（右栏自动注入） ---------- */
+function currentContext(){
+  if(S.tab==='rep' && S.report) return {label:'报告 '+S.report.name, text:S.report.md};
+  if(S.tab==='sol' && S.solution) return {label:'方案 '+S.solution.name, text:S.solution.md};
+  if(S.tab==='rt' && S.rt.active){
+    const t = S.rt.turns.slice(-6).map(x=>`[${x.role}] ${x.text}`).join('\n\n');
+    return {label:'圆桌 '+S.rt.topic, text:t};
+  }
+  if(S.tab==='art'){
+    const j = S.jobs.e1||S.jobs.article;
+    if(j) return {label:'进行中的任务', text:j.arg};
+  }
+  return {label:'', text:''};
+}
+function updateCtx(){
+  const c=currentContext();
+  $('ctxLabel').textContent = c.text ? ('当前上下文：'+c.label+'（已自动注入右栏）') : '当前上下文：无（点开左栏任意内容后自动注入）';
+}
+
+/* ---------- 圆桌 ---------- */
+function rtRender(ev){
+  if(ev.event==='turn'){
+    S.rt.turns.push(ev);
+    const isUser = /human|user/i.test(ev.role||'');
+    const d=document.createElement('div'); d.className='turn'+(isUser?' user':'');
+    d.innerHTML=`<div class="role">${esc(ev.role||'')}<span class="type">${esc(ev.type||'')}</span></div><div class="text">${esc(ev.text||'')}</div>`;
+    $('rtTurns').appendChild(d); d.scrollIntoView({behavior:'smooth',block:'end'});
+  } else if(ev.event==='session'){
+    S.rt.md=ev.md; $('rtFiles').style.display='flex'; $('rtJsonl').onclick=(e)=>{e.preventDefault(); openApiBlob('/api/discussions/'+encodeURIComponent(ev.jsonl), ev.jsonl);};
+  } else if(ev.event==='status'){ $('rtStatus').textContent='⏳ '+ev.msg; }
+  else if(ev.event==='ready'){ $('rtStatus').textContent='✅ '+ev.msg+'（话题：'+S.rt.topic+'）'; }
+  else if(ev.event==='error'){ const d=document.createElement('div'); d.className='turn'; d.innerHTML=`<div class="role" style="color:var(--danger)">出错</div><div class="text">${esc(ev.msg)}</div>`; $('rtTurns').appendChild(d); }
+  else if(ev.event==='report'){ toast('圆桌报告已落盘：'+ev.name); loadReports().then(()=>openReport(ev.name)); }
+}
+async function rtPoll(){
+  if(!S.rt.active) return;
+  try{
+    const st = await api('/api/roundtable/state?since='+S.rt.since);
+    st.events.forEach(rtRender); S.rt.since = st.total;
+    if(st.status==='exited'){ $('rtStatus').textContent='⚠️ 圆桌进程已退出（可看 e2-api-err.log）'; S.rt.active=false; }
+    if(S.rt.md && $('rtNotes').style.display==='block'){
+      const n=await api('/api/discussions/'+encodeURIComponent(S.rt.md));
+      $('rtNotes').innerHTML=n.html;
+    }
+  }catch(e){/* 轮询失败静默 */}
+}
+$('rtNotesBtn').onclick=async()=>{
+  const box=$('rtNotes');
+  if(box.style.display==='block'){ box.style.display='none'; return; }
+  if(!S.rt.md) return toast('本场暂无实录文件');
+  const n=await api('/api/discussions/'+encodeURIComponent(S.rt.md));
+  box.innerHTML=n.html; box.style.display='block';
+};
+$('rtStartBtn').onclick = async ()=>{
+  const topic=$('rtTopic').value.trim(); if(!topic) return toast('先填话题');
+  let background='';
+  if($('rtUseBg').checked){ if(!S.report) return toast('先去报告tab打开一份报告'); background=S.report.md; }
+  try{
+    await post('/api/roundtable/start',{topic,background});
+    S.rt={active:true,since:0,topic,turns:[]}; $('rtTurns').innerHTML='';
+    $('rtStartCard').style.display='none'; $('rtSession').style.display='block';
+    $('rtStatus').textContent='⏳ 启动中…'; updateCtx();
+  }catch(e){ toast(e.message); }
+};
+async function rtSend(text){
+  try{ await post('/api/roundtable/say',{text}); $('rtSay').value=''; }catch(e){ toast(e.message); }
+}
+$('rtSayBtn').onclick=()=>rtSend($('rtSay').value.trim());
+$('rtSay').onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); rtSend($('rtSay').value.trim()); } };
+$('rtNextBtn').onclick=async()=>{ try{ await post('/api/roundtable/next'); }catch(e){ toast(e.message); } };
+$('rtReportBtn').onclick=async()=>{ try{ await post('/api/roundtable/report'); toast('报告生成中…'); }catch(e){ toast(e.message); } };
+$('rtStopBtn').onclick=async()=>{ try{ await post('/api/roundtable/stop'); S.rt.active=false; $('rtStatus').textContent='已结束。报告可用「生成圆桌报告」补出（进程退出前）。'; $('rtStartCard').style.display='block'; }catch(e){ toast(e.message); } };
+
+/* ---------- 任务（E1 / 文章） ---------- */
+async function startJob(kind){
+  const q = kind==='e1' ? $('e1Query').value.trim() : $('artTopic').value.trim();
+  if(!q) return toast('先填问题/主题');
+  try{
+    const r = await post('/api/jobs/'+kind,{query:q});
+    S.jobs[kind]={id:r.job_id,arg:q,status:'running'};
+    $(kind==='e1'?'e1Log':'artLog').style.display='block';
+    $(kind==='e1'?'e1Btn':'artBtn').disabled=true;
+    toast('已启动，日志见下方');
+  }catch(e){ toast(e.message); }
+}
+$('e1Btn').onclick=()=>startJob('e1');
+$('artBtn').onclick=()=>startJob('article');
+async function jobPoll(){
+  for(const kind of ['e1','article']){
+    const j=S.jobs[kind]; if(!j||j.status!=='running') continue;
+    try{
+      const st=await api('/api/jobs/'+j.id);
+      const logEl=$(kind==='e1'?'e1Log':'artLog'), stEl=$(kind==='e1'?'e1Status':'artStatus');
+      logEl.textContent=st.tail.join('\n'); logEl.scrollTop=logEl.scrollHeight;
+      if(st.status==='running'){ stEl.textContent='进行中…'; }
+      else{
+        j.status=st.status; $(kind==='e1'?'e1Btn':'artBtn').disabled=false;
+        if(st.status==='done'){ stEl.textContent='✅ 完成'; toast('产出：'+st.result); await loadReports(); openReport(st.result); }
+        else{ stEl.textContent='❌ 失败（看日志尾部）'; }
+      }
+    }catch(e){/* 静默 */}
+  }
+}
+
+/* ---------- 报告 ---------- */
+async function loadReports(){
+  S.reports = await api('/api/reports');
+  const sel=$('repSelect'); const cur=sel.value;
+  sel.innerHTML=S.reports.map(r=>`<option value="${esc(r.name)}">${esc(r.mtime)} · ${esc(r.name)}${r.has_feedback?' ★':''}</option>`).join('');
+  if(cur && S.reports.some(r=>r.name===cur)) sel.value=cur;
+}
+async function openReport(name){
+  if(!name) return;
+  document.querySelector('.tabs button[data-tab="rep"]').click();
+  $('repSelect').value=name;
+  const r=await api('/api/reports/'+encodeURIComponent(name));
+  S.report=r; $('repBody').innerHTML=r.html; $('repFb').style.display='none'; updateCtx();
+}
+$('repSelect').onchange=e=>openReport(e.target.value);
+$('repRefresh').onclick=loadReports;
+$('repDiscuss').onclick=async()=>{
+  if(!S.report) return toast('先打开一份报告');
+  const title=(S.report.md.match(/^#\s+(.+)$/m)||[])[1]||S.report.name;
+  $('rtTopic').value=title; $('rtUseBg').checked=true;
+  document.querySelector('.tabs button[data-tab="rt"]').click();
+  $('rtStartBtn').click();
+};
+function fbRender(fb){
+  let h=`<div class="card"><h3>反馈层（供解题 Agent · 人也可读）</h3><div class="sub">${esc(fb.generated_at||'')} · ${esc(fb.one_line_summary||'')}</div>`;
+  (fb.decision_clues||[]).forEach(c=>{ h+=`<div class="fb-clue"><b>${esc(c.clue)}</b><div class="why">${esc(c.why||'')}${c.source?` · <a href="${esc(c.source)}" target="_blank" rel="noopener">出处</a>`:''}</div></div>`; });
+  if((fb.open_questions||[]).length){ h+=`<h3 style="margin-top:10px">未决问题</h3><ul style="padding-left:20px">`+fb.open_questions.map(q=>`<li>${esc(q)}</li>`).join('')+`</ul>`; }
+  if((fb.next_queries||[]).length){ h+=`<h3 style="margin-top:10px">下一轮候选检索</h3>`+fb.next_queries.map(q=>`<div class="fb-clue">${esc(q)} <button class="btn ghost" style="padding:2px 10px;font-size:12px" onclick="researchNext(this)" data-q="${esc(q)}">拿去研究</button></div>`).join(''); }
+  h+=`</div>`;
+  $('repFb').innerHTML=h; $('repFb').style.display='block';
+}
+window.researchNext=async(btn)=>{
+  $('e1Query').value=btn.dataset.q;
+  document.querySelector('.tabs button[data-tab="art"]').click();
+  startJob('e1');
+};
+$('repFbMake').onclick=async()=>{
+  if(!S.report) return toast('先打开一份报告');
+  toast('反馈层抽取中（约10–20秒）…');
+  try{ const fb=await post('/api/reports/'+encodeURIComponent(S.report.name)+'/feedback'); fbRender(fb); loadReports(); }catch(e){ toast(e.message); }
+};
+$('repFbShow').onclick=async()=>{
+  if(!S.report) return toast('先打开一份报告');
+  try{ fbRender(await api('/api/reports/'+encodeURIComponent(S.report.name)+'/feedback')); }catch(e){ toast('尚未生成，点「生成反馈层」'); }
+};
+
+/* ---------- 方案 ---------- */
+async function loadSolutions(){
+  const list=await api('/api/solutions');
+  $('solSelect').innerHTML=list.map(s=>`<option value="${esc(s.name)}">${esc(s.name)}</option>`).join('');
+  if(list.length && !S.solution) openSolution(list[0].name);
+}
+async function openSolution(name){
+  const r=await api('/api/solutions/'+encodeURIComponent(name));
+  S.solution=r; $('solBody').innerHTML=r.html; updateCtx();
+}
+$('solSelect').onchange=e=>openSolution(e.target.value);
+$('solRefresh').onclick=loadSolutions;
+
+/* ---------- 右栏聊天（历史服务端落盘，重载自动恢复） ---------- */
+function msgHtml(m){
+  if(m.role==='user') return `<div class="msg user"><div class="who">我</div><div class="bubble">${esc(m.content||'')}</div></div>`;
+  if(m.role==='note') return `<div class="msg note"><div class="who">交接</div><div class="bubble">${esc(m.content||'')}</div></div>`;
+  return `<div class="msg bot"><div class="who">翻译</div><div class="bubble">${m.html||esc(m.content||'')}</div></div>`;
+}
+function renderHistory(list){
+  $('msgs').innerHTML=list.map(msgHtml).join('');
+  S.chatRendered=list.length;
+  S.chatHistory=list.filter(m=>m.role==='user'||m.role==='assistant').map(m=>({role:m.role,content:m.content}));
+  const el=$('msgs'); el.scrollTop=el.scrollHeight;
+}
+async function chatSync(){
+  try{
+    const h=await api('/api/chat/history');
+    if(h.messages.length && h.messages.length!==S.chatRendered) renderHistory(h.messages);
+  }catch(e){/* 静默 */}
+}
+function addMsg(role, text, html){
+  const d=document.createElement('div'); d.className='msg '+(role==='user'?'user':'bot');
+  d.innerHTML=`<div class="who">${role==='user'?'我':'翻译'}</div><div class="bubble">${html||esc(text)}</div>`;
+  $('msgs').appendChild(d); d.scrollIntoView({behavior:'smooth',block:'end'});
+}
+async function sendChat(text){
+  if(!text) return;
+  addMsg('user',text); $('chatInput').value='';
+  const c=currentContext();
+  const thinking=document.createElement('div'); thinking.className='msg bot';
+  thinking.innerHTML='<div class="who">翻译</div><div class="bubble">…</div>'; $('msgs').appendChild(thinking);
+  try{
+    const r=await post('/api/chat',{message:text,context:c.text,context_label:c.label,history:S.chatHistory});
+    thinking.remove(); addMsg('assistant',r.reply,r.reply_html);
+    S.chatHistory.push({role:'user',content:text},{role:'assistant',content:r.reply});
+    if(S.chatHistory.length>16) S.chatHistory=S.chatHistory.slice(-16);
+  }catch(e){ thinking.remove(); addMsg('assistant','出错了：'+e.message); }
+}
+$('chatSend').onclick=()=>sendChat($('chatInput').value.trim());
+$('chatInput').onkeydown=e=>{ if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){ e.preventDefault(); sendChat($('chatInput').value.trim()); } };
+document.querySelectorAll('.chip').forEach(c=>c.onclick=()=>sendChat(c.dataset.q));
+
+/* ---------- 可拖拽分栏（比例存 localStorage，25%–75%） ---------- */
+(function(){
+  const dv=$('divider'), left=document.querySelector('.left');
+  const saved=parseFloat(localStorage.getItem('shell_split'));
+  if(saved>=25&&saved<=75) left.style.setProperty('--split',saved+'%');
+  let dragging=false;
+  dv.addEventListener('pointerdown',e=>{ dragging=true; dv.classList.add('drag'); document.body.classList.add('resizing'); dv.setPointerCapture(e.pointerId); e.preventDefault(); });
+  dv.addEventListener('pointermove',e=>{ if(!dragging) return; const w=window.innerWidth; if(!w) return; const pct=Math.min(75,Math.max(25,e.clientX/w*100)); if(!isFinite(pct)) return; left.style.setProperty('--split',pct+'%'); });
+  const up=()=>{ if(!dragging) return; dragging=false; dv.classList.remove('drag'); document.body.classList.remove('resizing'); localStorage.setItem('shell_split',parseFloat(left.style.getPropertyValue('--split'))||60); };
+  dv.addEventListener('pointerup',up); dv.addEventListener('pointercancel',up);
+})();
+
+/* 启动在历史模块就绪后执行，避免载入默认资料覆盖恢复的会话上下文。 */
+
+/* ---------- 任务卡（执行交接件：生成→交给执行Agent，免用户转发） ---------- */
+S.lastCtx=null; S.card=null;
+const _ucOrig=updateCtx;
+updateCtx=function(){ _ucOrig(); const c=currentContext(); if(c.text) S.lastCtx=c; };
+async function loadCards(){
+  const list=await api('/api/taskcards');
+  const sel=$('tcSelect'); const cur=sel.value;
+  sel.innerHTML=list.map(c=>`<option value="${esc(c.name)}">${esc(c.mtime)} · [${esc(c.status)}] ${esc(c.name)}</option>`).join('');
+  if(cur && list.some(c=>c.name===cur)) sel.value=cur;
+  if(list.length && !S.card) openCard(list[0].name);
+}
+async function openCard(name){
+  if(!name) return;
+  const r=await api('/api/taskcards/'+encodeURIComponent(name));
+  S.card=r; $('tcBody').innerHTML=r.html;
+  const st=$('tcStatus'); st.style.display='block';
+  st.textContent='状态：'+r.status+(r.status==='待执行'?'（已入取卡 inbox，执行 Agent 开工自动取）':'');
+}
+$('tcSelect').onchange=e=>openCard(e.target.value);
+$('tcRefresh').onclick=loadCards;
+$('tcGen').onclick=async()=>{
+  const c=S.lastCtx||currentContext();
+  if(!c.text) return toast('先打开一份报告/圆桌/方案再生产任务卡');
+  const chat=(S.chatHistory||[]).slice(-6).map(m=>`[${m.role==='user'?'我':'翻译'}] ${String(m.content).slice(0,400)}`).join('\n');
+  const context=c.text+(chat?'\n\n【右栏聊天最近6条】\n'+chat:'');
+  toast('任务卡抽取中（约10–20秒）…生成即自动交执行 Agent');
+  try{
+    const r=await post('/api/taskcards',{context,context_label:c.label+'+右栏聊天'});
+    await loadCards(); openCard(r.name); toast('任务卡已落盘并自动入 inbox（零点击）');
+  }catch(e){ toast(e.message); }
+};
+$('tcHandoff').onclick=async()=>{
+  if(!S.card) return toast('先选一张任务卡');
+  try{
+    const r=await post('/api/taskcards/'+encodeURIComponent(S.card.name)+'/handoff');
+    await loadCards(); openCard(r.name);
+    toast('已交执行 Agent：状态待执行 + 入 inbox，开工自动取卡');
+  }catch(e){ toast(e.message); }
+};
+</script>
+<script src="./history.js"></script>
+<script src="./auth.js"></script>
+<script>
+(async()=>{
+  try{
+    if(window.authInit) await authInit();
+    const h=await api('/api/health');$('healthDot').style.background=h.key_present?'#22c55e':'#b45309';
+    $('healthDot').title=h.key_present?'服务在线':'服务在线，模型未配置';
+    if($('verBadge')) $('verBadge').textContent='v'+(h.version||window.BUILD_VERSION||'dev');
+    if(window.setConn) setConn(true,h);
+    await Promise.all([loadReports(),loadSolutions(),loadCards()]);
+    await historyBoot();
+  }catch(e){$('healthDot').style.background='#ef4444'; if(window.setConn) setConn(false); historyError(e);}
+  setInterval(rtPoll,2000);setInterval(jobPoll,2500);setInterval(chatSync,4000);
+  if(window.authPoll) setInterval(authPoll,15000);
+})();
+</script>
+</body>
+</html>
