@@ -1,0 +1,14 @@
+# knowledge-storm 1.1.1 依赖约束（2026-11-20 排障结论）
+# 根因：dspy_ai==2.4.9 硬 pin openai<2.0.0 与 datasets~=2.14.6，
+# 与 2026 年最新 litellm/transformers/huggingface-hub 冲突 → pip 逐版本回溯。
+# 对策：锁到 knowledge-storm 1.1.1 发布同期（2024 末–2025 初）的兼容生态。
+openai<2
+litellm>=1.55,<1.60
+sentence-transformers>=3.0,<3.4
+transformers>=4.41,<4.48
+huggingface-hub>=0.23,<1
+datasets>=2.14.6,<2.15
+langchain-core<1
+langchain-text-splitters<1
+langchain-huggingface<0.2
+langchain-qdrant<0.3

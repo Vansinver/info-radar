@@ -1,0 +1,24 @@
+# 密钥与运行时产物（绝不提交）
+.env
+.env.*
+!.env.example
+backend/.env
+*.sqlite3
+joblogs/
+hf-cache/
+
+# Python 缓存与虚拟环境
+__pycache__/
+*.pyc
+venv-*/
+*.egg-info/
+
+# 引擎运行时软链/产物（容器内生成，指向持久盘）
+backend/reports
+backend/discussions
+backend/articles_work
+backend/models/
+
+# 本地测试与证据（在仓库外，双保险）
+testdata/
+evidence/
