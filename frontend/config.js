@@ -67,7 +67,6 @@ window.BUILD_VERSION = "pages-interim";
           toast('已开启新对话');
         } catch (e) { historyError(e); }
       };
-      post('/api/history', { title: 'noop' }).catch(function(){});
       bar.insertBefore(nb, ref);
     }
 
