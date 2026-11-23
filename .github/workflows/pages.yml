@@ -1,11 +1,8 @@
 name: Deploy frontend to GitHub Pages
 
+# 2026-11-23：站点已走阿里云公网 http://47.97.204.93/，GitHub Pages 从未启用成功。
+# 原 push 自动触发只会制造失败邮件，故改为仅手动运行（workflow_dispatch）。
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'frontend/**'
-      - '.github/workflows/pages.yml'
   workflow_dispatch:
 
 permissions:
